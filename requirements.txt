@@ -1,0 +1,4 @@
+flask>=3.0
+pysmb>=1.2.14
+gunicorn>=21.2
+requests>=2.31

@@ -1,0 +1,11 @@
+{
+  "protocol": "samba",
+  "host": "192.168.1.1",
+  "port": 445,
+  "username": "vnstat",
+  "password": "123456",
+  "share": "vnstat",
+  "file": "vnstat.db",
+  "webdav_url": "http://192.168.1.1/vnstat/vnstat.db",
+  "webdav_port": 80
+}

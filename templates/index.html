@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vnstat 网络流量仪表盘</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-primary: #07070f;
+  --bg-secondary: #0d0d1a;
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-hover: rgba(255, 255, 255, 0.08);
+  --text-primary: #f0f0f5;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --color-rx: #0ea5e9;
+  --color-rx-glow: rgba(14, 165, 233, 0.3);
+  --color-tx: #f59e0b;
+  --color-tx-glow: rgba(245, 158, 11, 0.3);
+  --color-total: #8b5cf6;
+  --color-total-glow: rgba(139, 92, 246, 0.3);
+  --color-accent: #06b6d4;
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --sidebar-w: 260px;
+}
+
+html { font-size: 15px; }
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATED BACKGROUND
+   ═══════════════════════════════════════════════════════════════════════════ */
+#bg-canvas {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════ */
+.app-container {
+  position: relative; z-index: 1;
+  max-width: 1360px; margin: 0 auto; padding: 24px 28px 60px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════ */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 28px; margin-bottom: 28px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-rx), var(--color-total));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: #fff;
+}
+.header-title {
+  font-size: 1.25rem; font-weight: 700;
+  background: linear-gradient(135deg, #f0f0f5 0%, #a5b4fc 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.header-subtitle {
+  font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;
+}
+.header-right {
+  display: flex; align-items: center; gap: 14px;
+}
+
+.interface-select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  padding: 8px 14px; border-radius: 8px;
+  font-size: 0.85rem; font-family: var(--font);
+  cursor: pointer; outline: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding-right: 32px; min-width: 120px;
+}
+.interface-select option { background: #1a1a2e; color: #f0f0f5; }
+.interface-select:hover { background-color: rgba(255,255,255,0.1); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px; font-size: 0.82rem;
+  font-weight: 500; font-family: var(--font);
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary); cursor: pointer;
+  transition: all 0.2s;
+}
+.btn:hover { background: rgba(255,255,255,0.12); }
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-rx), var(--color-accent));
+  border-color: transparent; color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.15); }
+.btn-icon {
+  padding: 8px; border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.btn-icon:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUMMARY CARDS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px; margin-bottom: 28px;
+}
+
+.summary-card {
+  padding: 22px 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative; overflow: hidden;
+}
+.summary-card::before {
+  content: ''; position: absolute; top: 0; left: 0;
+  width: 100%; height: 3px; opacity: 0; transition: opacity 0.3s;
+}
+.summary-card:hover { transform: translateY(-2px); background: var(--glass-hover); border-color: rgba(255,255,255,0.15); }
+.summary-card:hover::before { opacity: 1; }
+.summary-card.card-rx::before { background: linear-gradient(90deg, var(--color-rx), var(--color-accent)); }
+.summary-card.card-tx::before { background: linear-gradient(90deg, var(--color-tx), #f97316); }
+.summary-card.card-month::before { background: linear-gradient(90deg, var(--color-total), var(--color-rx)); }
+.summary-card.card-total::before { background: linear-gradient(90deg, #a78bfa, var(--color-total)); }
+
+.summary-card-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+.summary-card-label {
+  font-size: 0.78rem; font-weight: 500;
+  color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.summary-card-icon { font-size: 1.3rem; opacity: 0.7; }
+.summary-card-value {
+  font-size: 1.55rem; font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.summary-card-sub {
+  font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHARTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px; margin-bottom: 28px;
+}
+.chart-card {
+  padding: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+.chart-card.full-width { grid-column: 1 / -1; }
+.chart-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.chart-card-title {
+  font-size: 0.9rem; font-weight: 600; color: var(--text-primary);
+}
+.chart-card-badge {
+  font-size: 0.7rem; padding: 3px 10px; border-radius: 99px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary); border: 1px solid var(--glass-border);
+}
+.chart-wrapper { position: relative; height: 280px; }
+.chart-wrapper.tall { height: 340px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOP DAYS TABLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+.top-days-section {
+  padding: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  margin-bottom: 28px;
+}
+.table-container { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem;
+}
+thead th {
+  text-align: left; padding: 10px 14px;
+  font-weight: 500; font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--glass-border);
+}
+tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+}
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+tbody tr:last-child td { border-bottom: none; }
+td.rank { color: var(--text-muted); font-weight: 500; width: 48px; }
+td.rx-val { color: var(--color-rx); }
+td.tx-val { color: var(--color-tx); }
+td.total-val { color: var(--color-total); font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATUS BAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+.status-bar {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 14px 20px; margin-bottom: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem; color: var(--text-secondary);
+}
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #22c55e; display: inline-block; margin-right: 6px;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.status-dot.error { background: #ef4444; animation: none; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LOADING & ERROR
+   ═══════════════════════════════════════════════════════════════════════════ */
+.loading-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(7, 7, 15, 0.7);
+  backdrop-filter: blur(4px);
+  border-radius: inherit;
+  transition: opacity 0.3s;
+}
+.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--glass-border);
+  border-top-color: var(--color-rx);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-banner {
+  padding: 14px 20px; margin-bottom: 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  color: #fca5a5; font-size: 0.85rem;
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SETTINGS MODAL
+   ═══════════════════════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #111125;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius);
+  width: 100%; max-width: 540px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.modal-title {
+  font-size: 1.05rem; font-weight: 700;
+}
+.modal-close {
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; transition: all 0.2s;
+}
+.modal-close:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.modal-body { padding: 20px 24px 24px; }
+
+.form-group { margin-bottom: 16px; }
+.form-label {
+  display: block; font-size: 0.78rem; font-weight: 500;
+  color: var(--text-secondary); margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.form-input, .form-select {
+  width: 100%; padding: 10px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text-primary); font-size: 0.85rem;
+  font-family: var(--font); outline: none;
+  transition: border-color 0.2s;
+}
+.form-input:focus, .form-select:focus {
+  border-color: var(--color-rx);
+}
+.form-input::placeholder { color: var(--text-muted); }
+.form-select option { background: #1a1a2e; color: #f0f0f5; }
+
+.form-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+.setting-test-result {
+  margin-top: 12px; padding: 10px 14px;
+  border-radius: 8px; font-size: 0.8rem;
+  display: none;
+}
+.setting-test-result.success {
+  display: block;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+.setting-test-result.error {
+  display: block;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+.setting-test-result.loading {
+  display: block;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+}
+
+.modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 20px; padding-top: 16px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.form-hint {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .app-container { padding: 16px; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .header { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .header-right { width: 100%; flex-wrap: wrap; }
+  .summary-card-value { font-size: 1.25rem; }
+  .chart-wrapper { height: 220px; }
+  .chart-wrapper.tall { height: 260px; }
+  .form-row { grid-template-columns: 1fr; }
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+</style>
+</head>
+<body>
+
+<!-- ═══ ANIMATED BACKGROUND ═══ -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- ═══ ERROR BANNER ═══ -->
+<div class="error-banner" id="errorBanner">
+  <span id="errorText"></span>
+</div>
+
+<!-- ═══ SETTINGS MODAL ═══ -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">&#9881; 数据源设置</span>
+      <button class="modal-close" onclick="closeSettings()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="settingsForm" onsubmit="return false;">
+
+        <div class="form-group">
+          <label class="form-label">数据源</label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 0;color:var(--text-primary);font-size:0.85rem">
+            <input type="checkbox" id="cfgUseLocal" onchange="onLocalToggle()" style="width:18px;height:18px;accent-color:var(--color-rx);cursor:pointer">
+            使用本地文件（取消勾选则通过 Samba/WebDAV 远程获取）
+          </label>
+        </div>
+
+        <!-- Local file fields -->
+        <div id="localFields" style="display:none">
+          <div class="form-group">
+            <label class="form-label">数据库路径</label>
+            <input class="form-input" id="cfgLocalDb" placeholder="/app/data/vnstat.db">
+            <div class="form-hint">容器内 vnstat.db 的路径，通过 Docker 卷映射</div>
+          </div>
+        </div>
+
+        <!-- Remote fields (Samba / WebDAV) -->
+        <div id="remoteFields">
+          <div class="form-group">
+            <label class="form-label">协议</label>
+            <select class="form-select" id="cfgProtocol" onchange="onProtocolChange()">
+              <option value="samba">Samba (SMB/CIFS)</option>
+              <option value="webdav">WebDAV (HTTP)</option>
+            </select>
+          </div>
+
+        <!-- Samba fields -->
+        <div id="sambaFields">
+          <div class="form-group">
+            <label class="form-label">主机地址</label>
+            <input class="form-input" id="cfgHost" placeholder="192.168.1.1">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">端口</label>
+              <input class="form-input" id="cfgPort" placeholder="445" type="number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">共享名称</label>
+              <input class="form-input" id="cfgShare" placeholder="vnstat">
+            </div>
+          </div>
+        </div>
+
+        <!-- WebDAV fields -->
+        <div id="webdavFields" style="display:none">
+          <div class="form-group">
+            <label class="form-label">WebDAV URL</label>
+            <input class="form-input" id="cfgWebdavUrl" placeholder="http://192.168.1.1/vnstat/vnstat.db">
+            <div class="form-hint">数据库文件的完整 HTTP 地址</div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">主机地址</label>
+              <input class="form-input" id="cfgWebdavHost" placeholder="192.168.1.1" oninput="updateWebdavUrl()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">端口</label>
+              <input class="form-input" id="cfgWebdavPort" placeholder="80" type="number" oninput="updateWebdavUrl()">
+            </div>
+          </div>
+        </div>
+        </div>  <!-- /remoteFields -->
+
+        <div id="remoteAuthFields">
+          <!-- Common fields -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">用户名</label>
+              <input class="form-input" id="cfgUser" placeholder="vnstat">
+            </div>
+            <div class="form-group">
+              <label class="form-label">密码</label>
+              <input class="form-input" id="cfgPass" type="password" placeholder="输入密码">
+            </div>
+          </div>
+
+          <div class="form-group" id="sambaExtraFields">
+            <label class="form-label">数据库文件名</label>
+            <input class="form-input" id="cfgFile" placeholder="vnstat.db">
+          </div>
+        </div>
+
+        <div id="testResult" class="setting-test-result"></div>
+
+      </form>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="testConnection()">测试连接</button>
+        <button class="btn" onclick="closeSettings()">取消</button>
+        <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div class="app-container">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-icon">&#9881;</div>
+      <div>
+        <div class="header-title">网络流量仪表盘</div>
+        <div class="header-subtitle" id="headerSubtitle">OpenWrt · vnstat</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <select class="interface-select" id="interfaceSelect">
+        <option value="">加载中...</option>
+      </select>
+      <button class="btn-icon" onclick="openSettings()" title="设置">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+      <button class="btn" id="refreshBtn" onclick="refreshData()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        刷新
+      </button>
+    </div>
+  </header>
+
+  <!-- Status bar -->
+  <div class="status-bar" id="statusBar">
+    <span><span class="status-dot" id="statusDot"></span><span id="statusText">连接中...</span></span>
+    <span id="statusProtocol"></span>
+    <span id="statusInterface"></span>
+    <span id="statusLastUpdate"></span>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary-grid" id="summaryGrid">
+    <div class="summary-card card-rx">
+      <div class="loading-overlay" id="loadingCards"><div class="spinner"></div></div>
+      <div class="summary-card-header">
+        <span class="summary-card-label">今日下载 (RX)</span>
+        <span class="summary-card-icon">&#8595;</span>
+      </div>
+      <div class="summary-card-value" id="todayRx">--</div>
+      <div class="summary-card-sub" id="todayRxSub">昨日 <span id="yesterdayRx">--</span></div>
+    </div>
+    <div class="summary-card card-tx">
+      <div class="summary-card-header">
+        <span class="summary-card-label">今日上传 (TX)</span>
+        <span class="summary-card-icon">&#8593;</span>
+      </div>
+      <div class="summary-card-value" id="todayTx">--</div>
+      <div class="summary-card-sub" id="todayTxSub">昨日 <span id="yesterdayTx">--</span></div>
+    </div>
+    <div class="summary-card card-month">
+      <div class="summary-card-header">
+        <span class="summary-card-label">本月总计</span>
+        <span class="summary-card-icon">&#9783;</span>
+      </div>
+      <div class="summary-card-value" id="monthTotal">--</div>
+      <div class="summary-card-sub" id="monthSub">下载 <span id="monthRx">--</span> · 上传 <span id="monthTx">--</span></div>
+    </div>
+    <div class="summary-card card-total">
+      <div class="summary-card-header">
+        <span class="summary-card-label" id="yearTotalLabel">当年总计</span>
+        <span class="summary-card-icon">&#9733;</span>
+      </div>
+      <div class="summary-card-value" id="allTotal">--</div>
+      <div class="summary-card-sub" id="allSub">日均 <span id="avgDaily">--</span></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1: 5-minute (full width) -->
+  <div class="chart-grid">
+    <div class="chart-card full-width">
+      <div class="loading-overlay" id="loadingFiveminute"><div class="spinner"></div></div>
+      <div class="chart-card-header">
+        <span class="chart-card-title">实时流量 (5分钟粒度)</span>
+        <span class="chart-card-badge">近12小时</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="fiveminuteChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2: Hourly (full width) -->
+  <div class="chart-grid">
+    <div class="chart-card full-width">
+      <div class="loading-overlay" id="loadingHourly"><div class="spinner"></div></div>
+      <div class="chart-card-header">
+        <span class="chart-card-title">24小时流量分布</span>
+        <span class="chart-card-badge">最近24小时</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="hourlyChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 3: Daily (full width) -->
+  <div class="chart-grid">
+    <div class="chart-card full-width">
+      <div class="loading-overlay" id="loadingDaily"><div class="spinner"></div></div>
+      <div class="chart-card-header">
+        <span class="chart-card-title">日流量</span>
+        <span class="chart-card-badge">近60天</span>
+      </div>
+      <div class="chart-wrapper tall"><canvas id="dailyChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 3: Monthly (full width) -->
+  <div class="chart-grid">
+    <div class="chart-card full-width">
+      <div class="loading-overlay" id="loadingMonthly"><div class="spinner"></div></div>
+      <div class="chart-card-header">
+        <span class="chart-card-title">月流量</span>
+        <span class="chart-card-badge">近24个月</span>
+      </div>
+      <div class="chart-wrapper tall"><canvas id="monthlyChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Top Days -->
+  <div class="top-days-section">
+    <div class="loading-overlay" id="loadingTopDays"><div class="spinner"></div></div>
+    <div class="chart-card-header">
+      <span class="chart-card-title">流量最高日 TOP 20</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:48px">#</th>
+            <th>日期</th>
+            <th>下载 (RX)</th>
+            <th>上传 (TX)</th>
+            <th>总计</th>
+          </tr>
+        </thead>
+        <tbody id="topDaysBody">
+          <tr><td colspan="5" style="text-align:center;color:var(--text-muted)">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// ANIMATED BACKGROUND
+// ═══════════════════════════════════════════════════════════════════════════
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let spots = [];
+  const COUNT = 28;
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  class GradientSpot {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      this.x = Math.random() * canvas.width;
+      this.y = Math.random() * canvas.height;
+      this.vx = (Math.random() - 0.5) * 0.25;
+      this.vy = (Math.random() - 0.5) * 0.25;
+      this.radius = 160 + Math.random() * 240;
+      const colors = [
+        { r: 14, g: 165, b: 233, a: 0.04 },
+        { r: 139, g: 92, b: 246, a: 0.04 },
+        { r: 6, g: 182, b: 212, a: 0.03 },
+        { r: 245, g: 158, b: 11, a: 0.03 },
+      ];
+      const c = colors[Math.floor(Math.random() * colors.length)];
+      this.r = c.r; this.g = c.g; this.b = c.b; this.a = c.a;
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy;
+      if (this.x < -this.radius || this.x > canvas.width + this.radius) this.reset();
+      if (this.y < -this.radius || this.y > canvas.height + this.radius) this.reset();
+    }
+    draw() {
+      const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+      g.addColorStop(0, `rgba(${this.r},${this.g},${this.b},${this.a * 2})`);
+      g.addColorStop(0.5, `rgba(${this.r},${this.g},${this.b},${this.a})`);
+      g.addColorStop(1, `rgba(${this.r},${this.g},${this.b},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
+    }
+  }
+
+  for (let i = 0; i < COUNT; i++) spots.push(new GradientSpot());
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    spots.forEach(s => { s.update(); s.draw(); });
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHART.JS GLOBALS
+// ═══════════════════════════════════════════════════════════════════════════
+Chart.defaults.color = 'rgba(255,255,255,0.55)';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════
+let charts = { daily: null, monthly: null, hourly: null, fiveminute: null };
+let currentInterface = '1';
+let interfaces = [];
+
+function fmtBytes(b) {
+  if (!b && b !== 0) return '--';
+  b = Number(b);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let u = 0;
+  while (Math.abs(b) >= 1024 && u < units.length - 1) { b /= 1024; u++; }
+  return b.toFixed(u === 0 ? 0 : 2) + ' ' + units[u];
+}
+
+function showError(msg) {
+  const banner = document.getElementById('errorBanner');
+  document.getElementById('errorText').textContent = msg;
+  banner.style.display = 'block';
+  setTimeout(() => { banner.style.display = 'none'; }, 6000);
+}
+
+function setLoading(id, loading) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden', !loading);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+function onLocalToggle() {
+  const checked = document.getElementById('cfgUseLocal').checked;
+  document.getElementById('localFields').style.display = checked ? 'block' : 'none';
+  document.getElementById('remoteFields').style.display = checked ? 'none' : 'block';
+  document.getElementById('remoteAuthFields').style.display = checked ? 'none' : 'block';
+}
+
+function onProtocolChange() {
+  const proto = document.getElementById('cfgProtocol').value;
+  document.getElementById('sambaFields').style.display = proto === 'samba' ? 'block' : 'none';
+  document.getElementById('sambaExtraFields').style.display = proto === 'samba' ? 'block' : 'none';
+  document.getElementById('webdavFields').style.display = proto === 'webdav' ? 'block' : 'none';
+  if (proto === 'webdav') updateWebdavUrl();
+}
+
+function updateWebdavUrl() {
+  // 从已有 URL 中提取路径部分，用 host:port 替换主机部分
+  const oldUrl = document.getElementById('cfgWebdavUrl').value;
+  const host = document.getElementById('cfgWebdavHost').value || '192.168.1.1';
+  const port = parseInt(document.getElementById('cfgWebdavPort').value) || 80;
+  const path = oldUrl.replace(/^https?:\/\/[^\/]+/, '') || '/vnstat/vnstat.db';
+  const protocol = oldUrl.startsWith('https') ? 'https' : 'http';
+  if (port === 80 || port === 443) {
+    document.getElementById('cfgWebdavUrl').value = `${protocol}://${host}${path}`;
+  } else {
+    document.getElementById('cfgWebdavUrl').value = `${protocol}://${host}:${port}${path}`;
+  }
+}
+
+function openSettings() {
+  document.getElementById('settingsModal').classList.add('open');
+  loadSettingsForm();
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+  document.getElementById('testResult').className = 'setting-test-result';
+}
+
+async function loadSettingsForm() {
+  try {
+    const resp = await fetch('/api/settings');
+    const s = await resp.json();
+
+    document.getElementById('cfgUseLocal').checked = s.source_mode === true || s.source_mode === 'true';
+    document.getElementById('cfgLocalDb').value = s.local_db_path || '/app/data/vnstat.db';
+    document.getElementById('cfgProtocol').value = s.protocol || 'samba';
+    document.getElementById('cfgHost').value = s.host || '';
+    document.getElementById('cfgPort').value = s.port || 445;
+    document.getElementById('cfgShare').value = s.share || 'vnstat';
+    document.getElementById('cfgFile').value = s.file || 'vnstat.db';
+    document.getElementById('cfgUser').value = s.username || '';
+    document.getElementById('cfgPass').value = s.has_password ? '********' : '';
+    document.getElementById('cfgWebdavUrl').value = s.webdav_url || '';
+    document.getElementById('cfgWebdavHost').value = s.host || '';
+    document.getElementById('cfgWebdavPort').value = s.webdav_port || 80;
+
+    onLocalToggle();
+    onProtocolChange();
+  } catch (e) {
+    showError('加载设置失败: ' + e.message);
+  }
+}
+
+function getFormSettings() {
+  const useLocal = document.getElementById('cfgUseLocal').checked;
+  const s = { source_mode: useLocal ? true : false };
+  if (useLocal) {
+    s.local_db_path = document.getElementById('cfgLocalDb').value;
+    return s;
+  }
+  const proto = document.getElementById('cfgProtocol').value;
+  s.protocol = proto;
+  const pw = document.getElementById('cfgPass').value;
+  // 只有当密码被修改（不是占位符 ******** 且不为空）时才发送
+  if (pw && pw !== '********') {
+    s.password = pw;
+  }
+  s.username = document.getElementById('cfgUser').value;
+  if (proto === 'samba') {
+    s.host = document.getElementById('cfgHost').value;
+    s.port = parseInt(document.getElementById('cfgPort').value) || 445;
+    s.share = document.getElementById('cfgShare').value;
+    s.file = document.getElementById('cfgFile').value;
+  } else {
+    s.webdav_url = document.getElementById('cfgWebdavUrl').value;
+    s.host = document.getElementById('cfgWebdavHost').value;
+    s.webdav_port = parseInt(document.getElementById('cfgWebdavPort').value) || 80;
+  }
+  return s;
+}
+
+async function testConnection() {
+  const el = document.getElementById('testResult');
+  el.className = 'setting-test-result loading';
+  el.textContent = '正在测试连接...';
+
+  try {
+    const resp = await fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getFormSettings()),
+    });
+    const result = await resp.json();
+    if (result.status === 'ok') {
+      el.className = 'setting-test-result success';
+      el.textContent = result.message;
+    } else {
+      el.className = 'setting-test-result error';
+      el.textContent = result.message;
+    }
+  } catch (e) {
+    el.className = 'setting-test-result error';
+    el.textContent = '测试请求失败: ' + e.message;
+  }
+}
+
+async function saveSettings() {
+  const btn = document.querySelector('.modal-actions .btn-primary');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getFormSettings()),
+    });
+    const result = await resp.json();
+    if (result.status === 'ok') {
+      closeSettings();
+      // Refresh everything with new settings
+      await loadAll();
+    } else {
+      showError('保存失败: ' + JSON.stringify(result));
+    }
+  } catch (e) {
+    showError('保存设置失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API CALLS
+// ═══════════════════════════════════════════════════════════════════════════
+async function api(path) {
+  const resp = await fetch(path);
+  if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
+  return resp.json();
+}
+
+async function loadInterfaces() {
+  try {
+    interfaces = await api('/api/interfaces');
+    const sel = document.getElementById('interfaceSelect');
+    if (interfaces.length === 0) {
+      sel.innerHTML = '<option value="">无接口</option>';
+      return;
+    }
+    sel.innerHTML = interfaces.map(i =>
+      `<option value="${i.id}">${i.name}</option>`
+    ).join('');
+    if (!sel.value) sel.value = interfaces[0].id;
+    currentInterface = sel.value;
+    sel.onchange = () => { currentInterface = sel.value; loadAll(); };
+  } catch (e) {
+    console.error('Interfaces error:', e);
+  }
+}
+
+async function loadStatus() {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const protoEl = document.getElementById('statusProtocol');
+  const ifaceEl = document.getElementById('statusInterface');
+  const updateEl = document.getElementById('statusLastUpdate');
+
+  try {
+    const status = await api('/api/status');
+    dot.className = 'status-dot';
+    text.textContent = '已连接';
+    if (status.source) protoEl.textContent = '· ' + status.source;
+    if (status.interfaces && status.interfaces.length > 0) {
+      ifaceEl.textContent = '· 接口: ' + status.interfaces.map(i => i.name).join(', ');
+    }
+  } catch (e) {
+    dot.className = 'status-dot error';
+    text.textContent = '连接失败';
+  }
+}
+
+async function loadSummary() {
+  setLoading('loadingCards', true);
+  try {
+    const s = await api(`/api/summary?interface=${currentInterface}`);
+    document.getElementById('todayRx').textContent = s.today ? fmtBytes(s.today.rx) : '--';
+    document.getElementById('todayTx').textContent = s.today ? fmtBytes(s.today.tx) : '--';
+    document.getElementById('yesterdayRx').textContent = s.yesterday ? fmtBytes(s.yesterday.rx) : '--';
+    document.getElementById('yesterdayTx').textContent = s.yesterday ? fmtBytes(s.yesterday.tx) : '--';
+
+    if (s.month) {
+      document.getElementById('monthTotal').textContent = fmtBytes(Number(s.month.rx) + Number(s.month.tx));
+      document.getElementById('monthRx').textContent = fmtBytes(s.month.rx);
+      document.getElementById('monthTx').textContent = fmtBytes(s.month.tx);
+    } else {
+      document.getElementById('monthTotal').textContent = '--';
+      document.getElementById('monthRx').textContent = '--';
+      document.getElementById('monthTx').textContent = '--';
+    }
+
+    if (s.total) {
+      document.getElementById('allTotal').textContent = fmtBytes(Number(s.total.rx) + Number(s.total.tx));
+      document.getElementById('yearTotalLabel').textContent = (s.total.year || '') + '年总计';
+      document.getElementById('avgDaily').textContent =
+        s.avg_daily ? fmtBytes(Number(s.avg_daily.rx) + Number(s.avg_daily.tx)) + '/天' : '--';
+    } else {
+      document.getElementById('allTotal').textContent = '--';
+      document.getElementById('yearTotalLabel').textContent = '当年总计';
+      document.getElementById('avgDaily').textContent = '--';
+    }
+
+    document.getElementById('headerSubtitle').textContent =
+      s.interface ? 'OpenWrt · ' + s.interface : 'OpenWrt · vnstat';
+
+    if (s.last_update)
+      document.getElementById('statusLastUpdate').textContent = '· 更新至 ' + s.last_update;
+  } catch (e) {
+    showError('加载总览失败: ' + e.message);
+  } finally {
+    setLoading('loadingCards', false);
+  }
+}
+
+async function loadDaily() {
+  setLoading('loadingDaily', true);
+  try {
+    const data = await api(`/api/daily?interface=${currentInterface}&days=60`);
+    renderDailyChart(data);
+  } catch (e) {
+    showError('加载日流量失败: ' + e.message);
+  } finally {
+    setLoading('loadingDaily', false);
+  }
+}
+
+async function loadMonthly() {
+  setLoading('loadingMonthly', true);
+  try {
+    const data = await api(`/api/monthly?interface=${currentInterface}&months=24`);
+    renderMonthlyChart(data);
+  } catch (e) {
+    showError('加载月流量失败: ' + e.message);
+  } finally {
+    setLoading('loadingMonthly', false);
+  }
+}
+
+async function loadHourly() {
+  setLoading('loadingHourly', true);
+  try {
+    const data = await api(`/api/today-hourly?interface=${currentInterface}`);
+    renderHourlyChart(data);
+  } catch (e) {
+    showError('加载小时流量失败: ' + e.message);
+  } finally {
+    setLoading('loadingHourly', false);
+  }
+}
+
+
+async function loadFiveminute() {
+  setLoading('loadingFiveminute', true);
+  try {
+    const data = await api(`/api/fiveminute?interface=${currentInterface}&minutes=720`);
+    renderFiveminuteChart(data);
+  } catch (e) {
+    showError('加载实时流量失败: ' + e.message);
+  } finally {
+    setLoading('loadingFiveminute', false);
+  }
+}
+
+async function loadTopDays() {
+  setLoading('loadingTopDays', true);
+  try {
+    const data = await api(`/api/top-days?interface=${currentInterface}&limit=20`);
+    const tbody = document.getElementById('topDaysBody');
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">暂无数据</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(d => `<tr>
+        <td class="rank">${d.rank}</td>
+        <td>${d.date}</td>
+        <td class="rx-val">${fmtBytes(d.rx)}</td>
+        <td class="tx-val">${fmtBytes(d.tx)}</td>
+        <td class="total-val">${fmtBytes(d.total)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    showError('加载TOP排行失败: ' + e.message);
+  } finally {
+    setLoading('loadingTopDays', false);
+  }
+}
+
+function renderDailyChart(data) {
+  const ctx = document.getElementById('dailyChart').getContext('2d');
+  if (charts.daily) { charts.daily.destroy(); }
+  if (!data || data.length === 0) {
+    charts.daily = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: '暂无数据', color: 'rgba(255,255,255,0.4)' } } } });
+    return;
+  }
+  const labels = data.map(d => d.date.slice(5));
+  const rxData = data.map(d => (d.rx / (1024*1024*1024)).toFixed(2));
+  const txData = data.map(d => (d.tx / (1024*1024*1024)).toFixed(2));
+  charts.daily = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: '下载 (RX)', data: rxData, backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,300); g.addColorStop(0,'rgba(14,165,233,0.7)'); g.addColorStop(1,'rgba(14,165,233,0.15)'); return g; }, borderColor: 'rgba(14,165,233,0.9)', borderWidth: 1, borderRadius: 2, barPercentage: 0.65, categoryPercentage: 0.6 },
+      { label: '上传 (TX)', data: txData, backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,300); g.addColorStop(0,'rgba(245,158,11,0.6)'); g.addColorStop(1,'rgba(245,158,11,0.1)'); return g; }, borderColor: 'rgba(245,158,11,0.9)', borderWidth: 1, borderRadius: 2, barPercentage: 0.65, categoryPercentage: 0.6 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' } }, tooltip: { backgroundColor: 'rgba(10,10,25,0.85)', padding: 12, cornerRadius: 8, callbacks: { label: (ctx) => ctx.dataset.label + ': ' + Number(ctx.raw).toFixed(2) + ' GB' } } },
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, maxTicksLimit: 30, autoSkip: true, font: { size: 9 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'GB', color: 'rgba(255,255,255,0.35)' }, ticks: { font: { size: 10 } }, beginAtZero: true } }
+    }
+  });
+}
+
+function renderMonthlyChart(data) {
+  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  if (charts.monthly) { charts.monthly.destroy(); }
+  if (!data || data.length === 0) { charts.monthly = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: '暂无数据', color: 'rgba(255,255,255,0.4)' } } } }); return; }
+  charts.monthly = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: data.map(d => d.date), datasets: [
+      { label: '下载', data: data.map(d => (d.rx/(1024*1024*1024)).toFixed(2)), backgroundColor: 'rgba(14,165,233,0.6)', borderColor: 'rgba(14,165,233,0.9)', borderWidth: 1, borderRadius: 3, barPercentage: 0.8, categoryPercentage: 0.65 },
+      { label: '上传', data: data.map(d => (d.tx/(1024*1024*1024)).toFixed(2)), backgroundColor: 'rgba(245,158,11,0.5)', borderColor: 'rgba(245,158,11,0.9)', borderWidth: 1, borderRadius: 3, barPercentage: 0.8, categoryPercentage: 0.65 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { boxWidth: 12, padding: 14, usePointStyle: true, pointStyle: 'circle', font: { size: 10 } } }, tooltip: { backgroundColor: 'rgba(10,10,25,0.85)', padding: 10, cornerRadius: 8, callbacks: { label: (ctx) => ctx.dataset.label + ': ' + Number(ctx.raw).toFixed(2) + ' GB' } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 24, autoSkip: true, maxRotation: 45, font: { size: 9 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'GB', color: 'rgba(255,255,255,0.35)' }, ticks: { font: { size: 10 } }, beginAtZero: true } } }
+  });
+}
+
+function renderHourlyChart(data) {
+  const ctx = document.getElementById('hourlyChart').getContext('2d');
+  if (charts.hourly) { charts.hourly.destroy(); }
+  if (!data || data.length === 0) { charts.hourly = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: '暂无数据', color: 'rgba(255,255,255,0.4)' } } } }); return; }
+  charts.hourly = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.label || (d.hour.toString().padStart(2,'0')+':00')),
+      datasets: [
+        { label: '下载 (RX)', data: data.map(d => (d.rx/(1024*1024)).toFixed(2)), borderColor: '#0ea5e9', backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,340); g.addColorStop(0,'rgba(14,165,233,0.25)'); g.addColorStop(1,'rgba(14,165,233,0)'); return g; }, fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, pointBackgroundColor: '#0ea5e9', borderWidth: 2 },
+        { label: '上传 (TX)', data: data.map(d => (d.tx/(1024*1024)).toFixed(2)), borderColor: '#f59e0b', backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,340); g.addColorStop(0,'rgba(245,158,11,0.2)'); g.addColorStop(1,'rgba(245,158,11,0)'); return g; }, fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, pointBackgroundColor: '#f59e0b', borderWidth: 2 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' } }, tooltip: { backgroundColor: 'rgba(10,10,25,0.85)', padding: 12, cornerRadius: 8, callbacks: { label: (ctx) => ctx.dataset.label + ': ' + Number(ctx.raw).toFixed(2) + ' MB' } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 24, font: { size: 10 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'MB', color: 'rgba(255,255,255,0.35)' }, ticks: { font: { size: 10 } }, beginAtZero: true } } }
+  });
+}
+
+function renderFiveminuteChart(data) {
+  const ctx = document.getElementById('fiveminuteChart').getContext('2d');
+  if (charts.fiveminute) { charts.fiveminute.destroy(); }
+  if (!data || data.length === 0) { charts.fiveminute = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: '暂无数据', color: 'rgba(255,255,255,0.4)' } } } }); return; }
+  charts.fiveminute = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.time.length > 16 ? d.time.slice(11,16) : d.time),
+      datasets: [
+        { label: '下载 (RX)', data: data.map(d => (d.rx/(1024*1024)).toFixed(2)), borderColor: '#06b6d4', backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,340); g.addColorStop(0,'rgba(6,182,212,0.25)'); g.addColorStop(1,'rgba(6,182,212,0)'); return g; }, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.5 },
+        { label: '上传 (TX)', data: data.map(d => (d.tx/(1024*1024)).toFixed(2)), borderColor: '#f97316', backgroundColor: (ctx) => { const g = ctx.chart.ctx.createLinearGradient(0,0,0,340); g.addColorStop(0,'rgba(249,115,22,0.2)'); g.addColorStop(1,'rgba(249,115,22,0)'); return g; }, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.5 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' } }, tooltip: { backgroundColor: 'rgba(10,10,25,0.85)', padding: 12, cornerRadius: 8, callbacks: { label: (ctx) => ctx.dataset.label + ': ' + Number(ctx.raw).toFixed(2) + ' MB' } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 9 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, title: { display: true, text: 'MB', color: 'rgba(255,255,255,0.35)' }, ticks: { font: { size: 10 } }, beginAtZero: true } } }
+  });
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> 刷新中...';
+  try { await api('/api/refresh'); } catch (e) { }
+  await loadAll();
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> 刷新';
+}
+
+async function loadAll() {
+  await Promise.all([ loadStatus(), loadSummary(), loadDaily(), loadMonthly(), loadHourly(), loadFiveminute(), loadTopDays() ]);
+}
+
+function startAutoRefresh() {
+  setInterval(() => { loadSummary(); loadDaily(); loadTopDays(); loadFiveminute(); }, 5 * 60 * 1000);
+}
+
+(async function init() {
+  await loadStatus();
+  await loadInterfaces();
+  await loadAll();
+  startAutoRefresh();
+})();
+</script>
+</body>
+</html>

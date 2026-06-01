@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  vnstat-dashboard:
+    image: ghcr.io/YOUR_GITHUB_USER/vnstat-dashboard:latest
+    container_name: vnstat-dashboard
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # 持久化 settings.json（数据源配置），不覆盖应用代码
+      - vnstat-data:/app/data
+
+volumes:
+  vnstat-data:
